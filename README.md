@@ -4,7 +4,6 @@
 
 <p align="center">
   Computer Science Engineering student at BMSIT&amp;M, Bengaluru<br/>
-  Head of Events, ARVR Hub
 </p>
 
 <p align="center">
