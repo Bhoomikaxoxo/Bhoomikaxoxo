@@ -3,14 +3,9 @@
 
 Funciona como um "github stats" próprio: consulta a sua conta pela API do GitHub
 (linguagens dos repositórios, contribuições do último ano, pull requests, estrelas)
-e desenha o painel em SVG com uma paleta suave e discreta inspirada no banner.
-Só usa a biblioteca padrão do Python.
-
-Uso local:
-  python generate_radar.py --demo        dados reais ou demo
-  GH_USER=Bhoomikaxoxo GITHUB_TOKEN=ghp_xxx python generate_radar.py
-
-No GitHub Actions (workflow incluído), usuário e token são preenchidos sozinhos.
+e desenha o painel em SVG com a tipografia Editorial Serif & Tech Duo
+(títulos em serif itálico como "Bhoomika R", labels e dados em tech sans & monospace)
+e a paleta de cores atenuada do banner.
 """
 import html
 import json
@@ -65,7 +60,11 @@ NEON = {
     "SQL": "#457e8c",              # Petróleo suave
 }
 FALLBACK = ["#5b9ea6", "#be7a38", "#4d8e99", "#ad6235", "#468278", "#69729a", "#9e5d6d", "#ad823e"]
-FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
+# Tipografia: Editorial Serif & Tech Duo
+FONT_SERIF = "Georgia, 'Playfair Display', Cambria, 'Times New Roman', Times, serif"
+FONT_SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+FONT_MONO = "ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
 
 QUERY = """
 query($login: String!, $after: String) {
@@ -98,7 +97,7 @@ DEMO_DATA = {
         "HTML": 400386,
         "CSS": 333256,
     },
-    "stats": {"repos": 15, "contributions": 235, "prs": 1, "stars": 1},
+    "stats": {"repos": 15, "contributions": 236, "prs": 1, "stars": 1},
 }
 
 
@@ -127,7 +126,6 @@ def collect(pages):
     for page in pages:
         for repo in page["repositories"]["nodes"]:
             stars += repo.get("stargazerCount", 0)
-            # Para o radar de linguagens, foca nos códigos dos repositórios próprios
             if not repo.get("isFork"):
                 for edge in repo["languages"]["edges"]:
                     name = edge["node"]["name"]
@@ -168,7 +166,7 @@ def fetch_public():
         if m:
             contribs = int(m[0].replace(",", ""))
     except Exception:
-        contribs = 235
+        contribs = 236
 
     total_repos = 15
     try:
@@ -207,7 +205,7 @@ def fetch_public():
         "langs": langs,
         "stats": {
             "repos": total_repos,
-            "contributions": contribs or 235,
+            "contributions": contribs or 236,
             "prs": 1,
             "stars": max(stars, 1),
         }
@@ -249,10 +247,13 @@ def clip(text_val, size):
     return text_val if len(text_val) <= size else text_val[: size - 1] + "…"
 
 
-def text(x, y, s, fill="#ffffff", size=12, anchor="start", weight=400, letter_spacing=None):
+def text(x, y, s, fill="#ffffff", size=12, anchor="start", weight=400, font="sans", style="normal", letter_spacing=None, uppercase=False):
+    font_family = FONT_SERIF if font == "serif" else FONT_MONO if font == "mono" else FONT_SANS
+    tt = "text-transform:uppercase;" if uppercase else ""
+    fst = f"font-style:{style};" if style != "normal" else ""
     ls = f"letter-spacing:{letter_spacing};" if letter_spacing else ""
-    return (f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" style="font-family:{FONT};'
-            f'font-size:{size}px;fill:{fill};font-weight:{weight};{ls}">{html.escape(s)}</text>')
+    return (f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" style="font-family:{font_family};'
+            f'font-size:{size}px;fill:{fill};font-weight:{weight};{fst}{tt}{ls}">{html.escape(s)}</text>')
 
 
 CSS = """.rp{transform-origin:172px 185px;animation:gp 1s ease-out backwards;transition:fill-opacity .2s}
@@ -326,8 +327,8 @@ def render(rows, others, stats, demo):
     for x, y, w, h in [(10, 10, 325, 300), (345, 10, 325, 300), (10, 322, 660, 80)]:
         o.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" fill="url(#cardGrad)" stroke="#161c28" stroke-width="1"/>')
 
-    # ---- Radar (Painel Esquerdo)
-    o.append(text(28, 38, "Language radar", ACCENT_AMBER, 13, weight=600, letter_spacing="0.3px"))
+    # ---- Radar (Painel Esquerdo - Título em Editorial Serif Itálico)
+    o.append(text(28, 38, "Language Radar", ACCENT_AMBER, 15, weight=600, font="serif", style="italic", letter_spacing="0.4px"))
     for k in range(1, 5):
         o.append(f'<polygon points="{poly([k / 4] * n)}" fill="none" stroke="#1b2434" stroke-width="1" stroke-opacity="0.7"/>')
     for i in range(n):
@@ -343,13 +344,13 @@ def render(rows, others, stats, demo):
         x, y = pt(i, 1)
         c, s = math.cos(-math.pi / 2 + 2 * math.pi * i / n), math.sin(-math.pi / 2 + 2 * math.pi * i / n)
         anchor = "start" if c > 0.3 else "end" if c < -0.3 else "middle"
-        o.append(text(x + c * 10, y + s * 12 + 4, clip(r["name"], 12), "#9aa8ba", 11, anchor, weight=400))
+        o.append(text(x + c * 10, y + s * 12 + 4, clip(r["name"], 12), "#9aa8ba", 11, anchor, weight=400, font="sans"))
 
     # Pontos interativos no radar
     for i, r in enumerate(rows):
         x, y = pt(i, scores[i])
         label = f'{clip(r["name"], 18)} · {pct(r["share"])}'
-        w = round(len(label) * 6.4 + 18)
+        w = round(len(label) * 6.8 + 18)
         if i == 0:
             px, py = x + 10, y - 11
         else:
@@ -361,11 +362,11 @@ def render(rows, others, stats, demo):
         o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="14" fill="#ffffff" fill-opacity="0"/>')
         o.append(f'<circle class="dot" cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{dot_color}" stroke="#07090e" stroke-width="1"/>')
         o.append(f'<g class="tip"><rect x="{px:.1f}" y="{py:.1f}" width="{w}" height="22" rx="4" fill="#090d14" stroke="{ACCENT_CYAN}" stroke-width="1"/>')
-        o.append(text(px + w / 2, py + 15, label, "#d5dde5", 11, "middle", weight=400) + "</g></g>")
-    o.append(text(28, 296, "Share of code per language, square-root scale", "#526072", 11))
+        o.append(text(px + w / 2, py + 15, label, "#d5dde5", 11, "middle", weight=500, font="mono") + "</g></g>")
+    o.append(text(28, 296, "Share of code per language, square-root scale", "#526072", 10.5, font="sans", style="italic"))
 
-    # ---- Ranking de Linguagens (Painel Direito)
-    o.append(text(363, 38, "Top languages", ACCENT_CYAN, 13, weight=600, letter_spacing="0.3px"))
+    # ---- Ranking de Linguagens (Painel Direito - Título em Editorial Serif Itálico)
+    o.append(text(363, 38, "Top Languages", ACCENT_CYAN, 15, weight=600, font="serif", style="italic", letter_spacing="0.4px"))
     # Barra de distribuição total com canal escuro
     o.append('<rect x="363" y="56" width="289" height="8" rx="4" fill="#11151e"/>')
     o.append('<g clip-path="url(#cl)">')
@@ -381,18 +382,17 @@ def render(rows, others, stats, demo):
         o.append('<g class="row">')
         o.append(f'<rect class="hit" x="353" y="{y - 18:.1f}" width="309" height="{min(40, step - 2):.1f}" rx="4" fill="#ffffff"/>')
         o.append(f'<circle cx="369" cy="{y - 4:.1f}" r="4" fill="{r["color"]}"/>')
-        o.append(text(382, y, clip(r["name"], 24), "#dbe2ea", 13, weight=500 if k == 0 else 400))
-        o.append(text(652, y, pct(r["share"]), ACCENT_AMBER, 13, "end", weight=500))
+        o.append(text(382, y, clip(r["name"], 24), "#dbe2ea", 13, weight=500 if k == 0 else 400, font="sans"))
+        o.append(text(652, y, pct(r["share"]), ACCENT_AMBER, 12, "end", weight=600, font="mono"))
         o.append(f'<rect x="363" y="{y + 10:.1f}" width="289" height="4" rx="2" fill="#11151e"/>')
         o.append(f'<rect class="bf" style="animation-delay:{k * 0.12:.2f}s" x="363" y="{y + 10:.1f}" '
                  f'width="{289 * r["share"] / top:.1f}" height="4" rx="2" fill="{r["color"]}"/>')
         o.append("</g>")
     o.append("</g>")
     stamp = "sample data" if demo else f"updated on {date.today().isoformat()}"
-    o.append(text(363, 298, stamp, "#526072", 11))
+    o.append(text(363, 298, stamp, "#526072", 10.5, font="sans", style="italic"))
 
-    # ---- Estatísticas do Perfil (Painel Inferior)
-    # Contribuições totais e repositórios exatos
+    # ---- Estatísticas do Perfil (Painel Inferior - Tech Monospace & Labels)
     tiles = [
         ("Repos", stats["repos"], ACCENT_CYAN),
         ("Contributions", stats["contributions"], ACCENT_AMBER),
@@ -401,8 +401,8 @@ def render(rows, others, stats, demo):
     ]
     for k, (label, value, accent_col) in enumerate(tiles):
         x0 = 28 + k * 165
-        o.append(text(x0, 350, label, "#818e9f", 11, weight=500))
-        o.append(text(x0, 382, short(value), accent_col, 21, weight=600))
+        o.append(text(x0, 350, label, "#818e9f", 10, weight=500, font="mono", letter_spacing="0.8px", uppercase=True))
+        o.append(text(x0, 382, short(value), accent_col, 22, weight=700, font="mono"))
         if k:
             o.append(f'<line x1="{x0 - 17}" y1="338" x2="{x0 - 17}" y2="386" stroke="#161c28" stroke-width="1"/>')
     o.append("</svg>")
