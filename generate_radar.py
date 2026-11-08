@@ -363,7 +363,7 @@ def render(rows, others, stats, demo):
         o.append(f'<circle class="dot" cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{dot_color}" stroke="#07090e" stroke-width="1"/>')
         o.append(f'<g class="tip"><rect x="{px:.1f}" y="{py:.1f}" width="{w}" height="22" rx="4" fill="#090d14" stroke="{ACCENT_CYAN}" stroke-width="1"/>')
         o.append(text(px + w / 2, py + 15, label, "#d5dde5", 11, "middle", weight=500, font="mono") + "</g></g>")
-    o.append(text(28, 296, "Share of code per language, square-root scale", "#526072", 10.5, font="sans", style="italic"))
+
 
     # ---- Ranking de Linguagens (Painel Direito - Título em Editorial Serif Itálico)
     o.append(text(363, 38, "Top Languages", ACCENT_CYAN, 15, weight=600, font="serif", style="italic", letter_spacing="0.4px"))
@@ -389,8 +389,7 @@ def render(rows, others, stats, demo):
                  f'width="{289 * r["share"] / top:.1f}" height="4" rx="2" fill="{r["color"]}"/>')
         o.append("</g>")
     o.append("</g>")
-    stamp = "sample data" if demo else f"updated on {date.today().isoformat()}"
-    o.append(text(363, 298, stamp, "#526072", 10.5, font="sans", style="italic"))
+
 
     # ---- Estatísticas do Perfil (Painel Inferior - Tech Monospace & Labels)
     tiles = [
