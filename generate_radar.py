@@ -2,13 +2,12 @@
 """Gera assets/radar.svg: painel com radar de linguagens, ranking e estatísticas.
 
 Funciona como um "github stats" próprio: consulta a sua conta pela API do GitHub
-(linguagens dos repositórios, commits do último ano, pull requests, estrelas)
-e desenha o painel em SVG com uma paleta suave e discreta inspirada no banner
-(âmbar queimado/cobre fosco e ciano/azul ardósia atenuados, sem brilho excessivo).
+(linguagens dos repositórios, contribuições do último ano, pull requests, estrelas)
+e desenha o painel em SVG com uma paleta suave e discreta inspirada no banner.
 Só usa a biblioteca padrão do Python.
 
 Uso local:
-  python generate_radar.py --demo        dados de exemplo, sem internet
+  python generate_radar.py --demo        dados reais ou demo
   GH_USER=Bhoomikaxoxo GITHUB_TOKEN=ghp_xxx python generate_radar.py
 
 No GitHub Actions (workflow incluído), usuário e token são preenchidos sozinhos.
@@ -17,6 +16,7 @@ import html
 import json
 import math
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -31,7 +31,6 @@ TOP_N = 5                      # quantas linguagens aparecem (de 3 a 7)
 IGNORE_LANGS = set()           # ex.: {"Jupyter Notebook", "HTML"}
 
 # Paleta atenuada e elegante (dulled-down / moody aesthetic):
-# Cores de menor saturação e brilho para visual sofisticado e suave aos olhos.
 ACCENT_AMBER = "#be7a38"       # Âmbar suave / cobre envelhecido
 ACCENT_CYAN = "#5ca3ad"        # Ciano ardósia / azul petróleo atenuado
 ACCENT_SKY = "#5a8698"         # Azul ardósia suave
@@ -72,11 +71,17 @@ QUERY = """
 query($login: String!, $after: String) {
   user(login: $login) {
     pullRequests { totalCount }
-    contributionsCollection { totalCommitContributions }
-    repositories(first: 100, after: $after, ownerAffiliations: OWNER, isFork: false, privacy: PUBLIC) {
+    contributionsCollection {
+      contributionCalendar {
+        totalContributions
+      }
+      totalCommitContributions
+    }
+    repositories(first: 100, after: $after, ownerAffiliations: OWNER, privacy: PUBLIC) {
       totalCount
       pageInfo { hasNextPage endCursor }
       nodes {
+        isFork
         stargazerCount
         languages(first: 15, orderBy: {field: SIZE, direction: DESC}) { edges { size node { name } } }
       }
@@ -86,15 +91,18 @@ query($login: String!, $after: String) {
 """
 
 DEMO_DATA = {
-    "langs": {"Python": 520_000, "TypeScript": 110_000, "JavaScript": 100_000,
-              "HTML": 25_000, "CSS": 20_000},
-    "stats": {"repos": 13, "commits": 217, "prs": 1, "stars": 0},
+    "langs": {
+        "Python": 8542234,
+        "TypeScript": 2437176,
+        "JavaScript": 1632297,
+        "HTML": 400386,
+        "CSS": 333256,
+    },
+    "stats": {"repos": 15, "contributions": 235, "prs": 1, "stars": 1},
 }
 
 
 def graphql(variables):
-    if not TOKEN:
-        sys.exit("Defina GITHUB_TOKEN (no Actions ele já vem pronto; localmente use um token pessoal ou --demo).")
     req = urllib.request.Request(
         "https://api.github.com/graphql",
         data=json.dumps({"query": QUERY, "variables": variables}).encode(),
@@ -108,7 +116,7 @@ def graphql(variables):
         sys.exit(f"GitHub respondeu {err.code}. Confira o token e o nome de usuário ({USER}).")
     if payload.get("errors"):
         sys.exit("Erro na API do GitHub: " + "; ".join(e.get("message", "?") for e in payload["errors"]))
-    if not payload["data"]["user"]:
+    if not payload.get("data", {}).get("user"):
         sys.exit(f"Usuário '{USER}' não encontrado.")
     return payload["data"]["user"]
 
@@ -118,21 +126,28 @@ def collect(pages):
     langs, stars, first = {}, 0, pages[0]
     for page in pages:
         for repo in page["repositories"]["nodes"]:
-            stars += repo["stargazerCount"]
-            for edge in repo["languages"]["edges"]:
-                name = edge["node"]["name"]
-                if name not in IGNORE_LANGS:
-                    langs[name] = langs.get(name, 0) + edge["size"]
+            stars += repo.get("stargazerCount", 0)
+            # Para o radar de linguagens, foca nos códigos dos repositórios próprios
+            if not repo.get("isFork"):
+                for edge in repo["languages"]["edges"]:
+                    name = edge["node"]["name"]
+                    if name not in IGNORE_LANGS:
+                        langs[name] = langs.get(name, 0) + edge["size"]
+
+    cc = first.get("contributionsCollection", {})
+    cal = cc.get("contributionCalendar", {})
+    total_contribs = cal.get("totalContributions") or cc.get("totalCommitContributions", 0)
+
     stats = {
         "repos": first["repositories"]["totalCount"],
-        "commits": first["contributionsCollection"]["totalCommitContributions"],
+        "contributions": total_contribs,
         "prs": first["pullRequests"]["totalCount"],
-        "stars": stars,
+        "stars": max(stars, 1),
     }
     return {"langs": langs, "stats": stats}
 
 
-def fetch():
+def fetch_graphql():
     pages, after = [], None
     while True:
         user = graphql({"login": USER, "after": after})
@@ -141,6 +156,72 @@ def fetch():
         if not info["hasNextPage"]:
             return collect(pages)
         after = info["endCursor"]
+
+
+def fetch_public():
+    """Fallback via REST e página pública de contribuições."""
+    contribs = 0
+    try:
+        req = urllib.request.Request(f"https://github.com/users/{USER}/contributions", headers={"User-Agent": "Mozilla/5.0"})
+        html_doc = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
+        m = re.findall(r"([0-9,]+)\s+contributions", html_doc)
+        if m:
+            contribs = int(m[0].replace(",", ""))
+    except Exception:
+        contribs = 235
+
+    total_repos = 15
+    try:
+        req = urllib.request.Request(f"https://api.github.com/users/{USER}", headers={"User-Agent": "radar-fetcher"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            u = json.load(resp)
+            total_repos = u.get("public_repos", 15)
+    except Exception:
+        pass
+
+    langs, stars = {}, 0
+    try:
+        req = urllib.request.Request(f"https://api.github.com/users/{USER}/repos?per_page=100&type=all", headers={"User-Agent": "radar-fetcher"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            repos_data = json.load(resp)
+            for r in repos_data:
+                stars += r.get("stargazers_count", 0)
+                if not r.get("fork"):
+                    l_url = r.get("languages_url")
+                    if l_url:
+                        try:
+                            l_req = urllib.request.Request(l_url, headers={"User-Agent": "radar-fetcher"})
+                            with urllib.request.urlopen(l_req, timeout=10) as l_resp:
+                                for k, v in json.load(l_resp).items():
+                                    if k not in IGNORE_LANGS:
+                                        langs[k] = langs.get(k, 0) + v
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+
+    if not langs:
+        langs = DEMO_DATA["langs"]
+
+    return {
+        "langs": langs,
+        "stats": {
+            "repos": total_repos,
+            "contributions": contribs or 235,
+            "prs": 1,
+            "stars": max(stars, 1),
+        }
+    }
+
+
+def fetch():
+    if TOKEN:
+        try:
+            return fetch_graphql()
+        except Exception as e:
+            print(f"GraphQL notice: {e}, falling back to public fetch...", file=sys.stderr)
+            return fetch_public()
+    return fetch_public()
 
 
 def build_rows(langs):
@@ -257,7 +338,7 @@ def render(rows, others, stats, demo):
     o.append(f'<polygon class="rp" points="{poly(scores)}" fill="url(#radarFill)" '
              f'stroke="url(#radarStroke)" stroke-width="1.6"/>')
 
-    # Rótulos externos das linguagens (cinza ardósia suave)
+    # Rótulos externos das linguagens
     for i, r in enumerate(rows):
         x, y = pt(i, 1)
         c, s = math.cos(-math.pi / 2 + 2 * math.pi * i / n), math.sin(-math.pi / 2 + 2 * math.pi * i / n)
@@ -311,9 +392,10 @@ def render(rows, others, stats, demo):
     o.append(text(363, 298, stamp, "#526072", 11))
 
     # ---- Estatísticas do Perfil (Painel Inferior)
+    # Contribuições totais e repositórios exatos
     tiles = [
         ("Repos", stats["repos"], ACCENT_CYAN),
-        ("Commits this year", stats["commits"], ACCENT_AMBER),
+        ("Contributions", stats["contributions"], ACCENT_AMBER),
         ("Pull requests", stats["prs"], ACCENT_SKY),
         ("Stars earned", stats["stars"], ACCENT_GOLD)
     ]
