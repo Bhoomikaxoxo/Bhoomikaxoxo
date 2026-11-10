@@ -2,14 +2,14 @@ name: Update Radar & GitHub Stats
 
 on:
   schedule:
-    # Runs weekly on Sunday at midnight UTC
-    - cron: '0 0 * * 0'
+    # Runs every 6 hours to keep stats fresh
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+  repository_dispatch:
+    types: [update-radar]
   push:
     branches:
       - main
-    paths:
-      - 'generate_radar.py'
 
 permissions:
   contents: write
