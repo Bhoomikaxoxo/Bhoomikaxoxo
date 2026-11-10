@@ -8,7 +8,7 @@
 
 </div>
 
-I'm **Bhoomika R**, a Computer Science Engineering student at **BMS Institute of Technology & Management**, curious about how technology works and, more importantly, how we can use it to build things that genuinely matter and make everyday life better.
+Hey, I'm a Computer Science Engineering student at **BMS Institute of Technology & Management**, curious about how technology works and, more importantly, how we can use it to build things that genuinely matter and make everyday life better.
 
 Interested in exploring full-stack development, software engineering, cybersecurity, and technology management. Always learning, experimenting, and looking for new things to build.
 
