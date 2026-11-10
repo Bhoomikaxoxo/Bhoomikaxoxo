@@ -8,9 +8,10 @@
 
 </div>
 
-Hey, I'm a Computer Science Engineering student at **BMS Institute of Technology & Management**, curious about how technology works and, more importantly, how we can use it to build things that genuinely matter and make everyday life better.
+Computer Science student at BMS Institute of Technology & Management, driven by a simple question: how do we build technology that actually makes people’s lives better?
 
-Interested in exploring full-stack development, software engineering, cybersecurity, and technology management. Always learning, experimenting, and looking for new things to build.
+My focus spans full-stack development, software engineering, cybersecurity, and technology management — not as separate interests, but as different lenses on the same goal: building systems that are functional, secure, and genuinely useful. I’m drawn to the full lifecycle of a product: designing it, engineering it, securing it, and understanding the strategy behind why it matters.
+Always experimenting, always shipping something new — because the best way to understand technology is to build with it.
 
 <div align="center">
 
