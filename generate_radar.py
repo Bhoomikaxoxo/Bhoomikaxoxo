@@ -79,11 +79,6 @@ query($login: String!, $after: String) {
       nodes {
         isFork
         stargazerCount
-        stargazers(first: 10) {
-          nodes {
-            login
-          }
-        }
         languages(first: 15, orderBy: {field: SIZE, direction: DESC}) {
           edges {
             size
@@ -106,7 +101,7 @@ DEMO_DATA = {
         "HTML": 400386,
         "CSS": 333256,
     },
-    "stats": {"repos": 15, "contributions": 236, "prs": 1, "stars": 0},
+    "stats": {"repos": 15, "contributions": 243, "prs": 1, "stars": 0},
 }
 
 
@@ -121,11 +116,14 @@ def graphql(variables):
         with urllib.request.urlopen(req, timeout=40) as resp:
             payload = json.load(resp)
     except urllib.error.HTTPError as err:
-        sys.exit(f"GitHub respondeu {err.code}. Confira o token e o nome de usuário ({USER}).")
+        raise RuntimeError(f"GitHub GraphQL respondeu {err.code}: {err.reason}")
+    except Exception as err:
+        raise RuntimeError(f"Erro de conexão GraphQL: {err}")
+
     if payload.get("errors"):
-        sys.exit("Erro na API do GitHub: " + "; ".join(e.get("message", "?") for e in payload["errors"]))
+        raise RuntimeError("Erro na API do GitHub: " + "; ".join(e.get("message", "?") for e in payload["errors"]))
     if not payload.get("data", {}).get("user"):
-        sys.exit(f"Usuário '{USER}' não encontrado.")
+        raise RuntimeError(f"Usuário '{USER}' não encontrado.")
     return payload["data"]["user"]
 
 
@@ -134,14 +132,9 @@ def collect(pages):
     langs, stars, first = {}, 0, pages[0]
     for page in pages:
         for repo in page["repositories"]["nodes"]:
-            # Conta apenas estrelas de outros usuários (exclui auto-estrela)
-            stg_nodes = repo.get("stargazers", {}).get("nodes", [])
-            for stg in stg_nodes:
-                if stg.get("login") != USER:
-                    stars += 1
-
-            # Mede linguagens reais dos repositórios próprios
+            # Conta estrelas apenas de repositórios próprios (não forks)
             if not repo.get("isFork"):
+                stars += repo.get("stargazerCount", 0)
                 for edge in repo["languages"]["edges"]:
                     name = edge["node"]["name"]
                     if name not in IGNORE_LANGS:
@@ -155,7 +148,7 @@ def collect(pages):
         "repos": first["repositories"]["totalCount"],
         "contributions": total_contribs,
         "prs": first["pullRequests"]["totalCount"],
-        "stars": stars,  # 0 se nenhuma estrela foi recebida de terceiros
+        "stars": stars,
     }
     return {"langs": langs, "stats": stats}
 
@@ -172,20 +165,26 @@ def fetch_graphql():
 
 
 def fetch_public():
-    """Busca dados reais via endpoints públicos quando sem token."""
+    """Busca dados reais via endpoints públicos quando sem token ou fallback."""
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
+
     contribs = 0
     try:
         req = urllib.request.Request(f"https://github.com/users/{USER}/contributions", headers={"User-Agent": "Mozilla/5.0"})
-        html_doc = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html_doc = resp.read().decode("utf-8")
         m = re.findall(r"([0-9,]+)\s+contributions", html_doc)
         if m:
             contribs = int(m[0].replace(",", ""))
-    except Exception:
-        contribs = 236
+    except Exception as e:
+        print(f"Notice: erro ao obter contribuições públicas ({e})", file=sys.stderr)
+        contribs = DEMO_DATA["stats"]["contributions"]
 
     total_repos = 15
     try:
-        req = urllib.request.Request(f"https://api.github.com/users/{USER}", headers={"User-Agent": "radar-fetcher"})
+        req = urllib.request.Request(f"https://api.github.com/users/{USER}", headers=headers)
         with urllib.request.urlopen(req, timeout=15) as resp:
             u = json.load(resp)
             total_repos = u.get("public_repos", 15)
@@ -193,16 +192,28 @@ def fetch_public():
         pass
 
     langs = {}
+    stars = 0
     try:
-        req = urllib.request.Request(f"https://api.github.com/users/{USER}/repos?per_page=100&type=all", headers={"User-Agent": "radar-fetcher"})
+        req = urllib.request.Request(f"https://api.github.com/users/{USER}/repos?per_page=100&type=all", headers=headers)
         with urllib.request.urlopen(req, timeout=20) as resp:
             repos_data = json.load(resp)
             for r in repos_data:
                 if not r.get("fork"):
+                    stg_url = r.get("stargazers_url")
+                    if stg_url and r.get("stargazers_count", 0) > 0:
+                        try:
+                            stg_req = urllib.request.Request(stg_url, headers=headers)
+                            with urllib.request.urlopen(stg_req, timeout=10) as stg_resp:
+                                stg_list = json.load(stg_resp)
+                                for s in stg_list:
+                                    if s.get("login") != USER:
+                                        stars += 1
+                        except Exception:
+                            pass
                     l_url = r.get("languages_url")
                     if l_url:
                         try:
-                            l_req = urllib.request.Request(l_url, headers={"User-Agent": "radar-fetcher"})
+                            l_req = urllib.request.Request(l_url, headers=headers)
                             with urllib.request.urlopen(l_req, timeout=10) as l_resp:
                                 for k, v in json.load(l_resp).items():
                                     if k not in IGNORE_LANGS:
@@ -219,9 +230,9 @@ def fetch_public():
         "langs": langs,
         "stats": {
             "repos": total_repos,
-            "contributions": contribs or 236,
+            "contributions": contribs or DEMO_DATA["stats"]["contributions"],
             "prs": 1,
-            "stars": 0,  # 0 estrelas ganhas
+            "stars": stars,
         }
     }
 
